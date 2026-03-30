@@ -1,0 +1,11 @@
+django
+djangorestframework
+django-cors-headers
+pgvector
+openai
+PyPDF2
+langchain-text-splitters
+sentence-transformers
+psycopg2-binary
+tiktoken
+python-dotenv
