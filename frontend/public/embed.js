@@ -15,7 +15,7 @@
   markedScript.src = "https://cdn.jsdelivr.net/npm/marked/marked.min.js";
   document.head.appendChild(markedScript);
 
-  // 2. Premium Styles
+  // 2. Updated Premium Styles
   const styles = `
     #chat-agent-bubble {
       position: fixed;
@@ -41,13 +41,18 @@
       z-index: 999999;
       display: none; flex-direction: column;
       overflow: hidden; border: 1px solid rgba(226, 232, 240, 0.8);
-      font-family: 'Inter', system-ui, sans-serif;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
       animation: chat-slide-up 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     }
     @keyframes chat-slide-up { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 
     #chat-header { background: #fff; color: #0f172a; padding: 20px 24px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center; }
     #chat-header .title { font-size: 16px; font-weight: 700; color: #0284c7; }
+    #chat-header .actions { display: flex; gap: 12px; align-items: center; }
+    #chat-new-chat, #chat-close { cursor: pointer; transition: color 0.2s; color: #94a3b8; }
+    #chat-new-chat:hover { color: #0284c7; }
+    #chat-close:hover { color: #ef4444; }
+
     #chat-messages { flex: 1; overflow-y: auto; padding: 24px; background: #fff; display: flex; flex-direction: column; gap: 16px; }
     .msg-wrapper { display: flex; gap: 12px; max-width: 85%; }
     .msg-wrapper.user { align-self: flex-end; flex-direction: row-reverse; }
@@ -57,12 +62,14 @@
     .msg { padding: 12px 16px; border-radius: 18px; font-size: 14px; line-height: 1.6; color: #334155; }
     .agent .msg { background: #f8fafc; border: 1px solid #f1f5f9; border-top-left-radius: 4px; }
     .user .msg { background: #0284c7; color: white; border-top-right-radius: 4px; }
-    .msg p { margin: 0 0 10px 0; }
-    .msg p:last-child { margin-bottom: 0; }
+    .msg p { margin: 0 0 10px 0; } .msg p:last-child { margin-bottom: 0; }
+    .msg ul, .msg ol { padding-left: 18px; }
+    
     .loader-msg { display: none; padding-left: 44px; margin-bottom: 16px; }
     .dots { display: flex; gap: 4px; background: #f8fafc; padding: 12px; border-radius: 12px; width: fit-content; }
     .dot { width: 6px; height: 6px; background: #cbd5e1; border-radius: 50%; animation: bounce 1.4s infinite ease-in-out both; }
     @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1); } }
+    
     #chat-input-area { padding: 20px; background: white; border-top: 1px solid #f1f5f9; display: flex; gap: 12px; }
     #chat-input { flex: 1; border: 1px solid #e2e8f0; padding: 12px 16px; border-radius: 14px; outline: none; font-size: 14px; }
     #chat-input:focus { border-color: #0284c7; }
@@ -81,10 +88,16 @@
   const window = document.createElement('div');
   window.id = 'chat-agent-window';
   window.innerHTML = `
-    <div id="chat-header"><span class="title">Support Assistant</span><span id="chat-close" style="cursor:pointer; color:#94a3b8;">&times;</span></div>
+    <div id="chat-header">
+      <span class="title">Support Assistant</span>
+      <div class="actions">
+        <span id="chat-new-chat" title="New Chat"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></span>
+        <span id="chat-close" style="font-size: 24px; line-height: 1;">&times;</span>
+      </div>
+    </div>
     <div id="chat-messages"></div>
     <div id="loader" class="loader-msg"><div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div>
-    <div id="chat-input-area"><input type="text" id="chat-input" placeholder="Ask me anything..."><button id="chat-send"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg></button></div>
+    <div id="chat-input-area"><input type="text" id="chat-input" placeholder="Ask me anything..."><button id="chat-send"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg></button></div>
     <div id="chat-footer">Powered by ChatAgent AI</div>
   `;
   document.body.appendChild(bubble);
@@ -96,9 +109,8 @@
   const sendBtn = window.querySelector('#chat-send');
 
   // Persistence Logic
-  let messages = JSON.parse(localStorage.getItem(storageKey)) || [
-    { role: 'agent', text: "Hello! I'm your AI guide. How can I help you today?" }
-  ];
+  const initialGreeting = { role: 'agent', text: "Hello! I'm your AI guide. How can I help you today?" };
+  let messages = JSON.parse(localStorage.getItem(storageKey)) || [initialGreeting];
 
   const renderMessages = () => {
     msgContainer.innerHTML = '';
@@ -146,6 +158,16 @@
 
   bubble.onclick = () => { window.style.display = window.style.display === 'flex' ? 'none' : 'flex'; renderMessages(); };
   window.querySelector('#chat-close').onclick = () => { window.style.display = 'none'; };
+  
+  // New Chat Logic
+  window.querySelector('#chat-new-chat').onclick = () => {
+    if (confirm("Clear this conversation and start fresh?")) {
+      messages = [initialGreeting];
+      localStorage.removeItem(storageKey);
+      renderMessages();
+    }
+  };
+
   sendBtn.onclick = handleSend;
   input.onkeypress = (e) => { if (e.key === 'Enter') handleSend(); };
 
@@ -154,6 +176,7 @@
   if (typeof marked !== 'undefined') renderMessages();
 
 })();
+
 
 
 
