@@ -12,11 +12,13 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import ChatWidget from "@/components/ChatWidget";
+import TenantSwitcher from "@/components/TenantSwitcher";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Overview", href: "/dashboard" },
   { icon: FileText, label: "Documents", href: "/dashboard/documents" },
   { icon: BarChart3, label: "Analytics", href: "/dashboard/analytics" },
+  { icon: MessageSquare, label: "Test Agent", href: "/dashboard/test-agent" },
   { icon: Settings, label: "Settings", href: "/dashboard/settings" },
 ];
 
@@ -28,12 +30,16 @@ export default function DashboardLayout({
   const pathname = usePathname();
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
+    <div className="flex h-screen bg-gray-50 overflow-hidden text-slate-900">
       {/* Sidebar */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col">
-        <div className="p-6 border-b border-slate-800 flex items-center gap-3">
-          <Bot className="text-primary-500" />
+        <div className="p-6 border-b border-slate-800 flex items-center gap-3 mb-4">
+          <Bot className="text-blue-500" />
           <span className="font-bold text-xl tracking-tight">AgentFlow</span>
+        </div>
+
+        <div className="px-4">
+          <TenantSwitcher />
         </div>
         
         <nav className="flex-1 p-4 space-y-2">
@@ -69,13 +75,7 @@ export default function DashboardLayout({
             {navItems.find(item => item.href === pathname)?.label || "Dashboard"}
           </h2>
           <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-sm font-medium text-gray-900">Acme Corp</p>
-              <p className="text-xs text-gray-500">Premium Plan</p>
-            </div>
-            <div className="w-10 h-10 bg-slate-200 rounded-full flex items-center justify-center font-bold text-slate-600">
-              AC
-            </div>
+             {/* Header icons or user profile can go here */}
           </div>
         </header>
         

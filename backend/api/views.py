@@ -1,14 +1,19 @@
 from rest_framework import viewsets, status, views, permissions
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
-from .models import KnowledgeDocument, DocumentChunk, Tenant, ChatQuery
-from .serializers import KnowledgeDocumentSerializer, ChatRequestSerializer
+from .models import KnowledgeDocument, DocumentChunk, Tenant, ChatQuery, WebsiteSource
 from .permissions import IsTenantDataOwner, TenantQuerySetMixin
 import time
 from django.db.models import Avg
 from django.utils import timezone
 from datetime import timedelta
 from .rag_utils import extract_text_from_file, chunk_text, generate_embedding, get_ai_response
+from .scraper_utils import scrape_website_text
+from .serializers import (
+    KnowledgeDocumentSerializer, ChatRequestSerializer, 
+    WebsiteSourceSerializer, WebsiteScrapeRequestSerializer,
+    TenantSerializer
+)
 from pgvector.django import CosineDistance
 
 class DocumentViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
@@ -22,10 +27,9 @@ class DocumentViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser]
 
     def perform_create(self, serializer):
-        # Assign the document to the current user's tenant
-        doc = serializer.save(tenant=self.request.user.tenant)
-        
-        # Trigger RAG processing (In a real app, this should be a Celery task)
+        # Use active tenant from switcher (request.tenant), not the DB user's fixed tenant
+        active_tenant = getattr(self.request, 'tenant', None) or self.request.user.tenant
+        doc = serializer.save(tenant=active_tenant)
         self.process_document(doc)
 
     def process_document(self, doc):
@@ -55,7 +59,8 @@ class ChatAgentView(views.APIView):
         serializer = ChatRequestSerializer(data=request.data)
         if serializer.is_valid():
             question = serializer.validated_data['question']
-            tenant = request.user.tenant
+            # Use active tenant from switcher (request.tenant), not the DB user's fixed tenant
+            tenant = getattr(request, 'tenant', None) or request.user.tenant
             
             # 1. Generate embedding for the question
             question_vector = generate_embedding(question)
@@ -130,6 +135,70 @@ class PublicChatView(views.APIView):
         
         return Response({"answer": answer}, status=status.HTTP_200_OK)
 
+class WebsiteViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
+    """
+    Handles listing and scraping website URLs.
+    """
+    queryset = WebsiteSource.objects.all()
+    serializer_class = WebsiteSourceSerializer
+    permission_classes = [IsTenantDataOwner]
+
+    def perform_create(self, serializer):
+        url = serializer.validated_data['url']
+        # Use active tenant from switcher (request.tenant), not the DB user's fixed tenant
+        active_tenant = getattr(self.request, 'tenant', None) or self.request.user.tenant
+        
+        # Save the source record under the correct agent
+        website_source = serializer.save(tenant=active_tenant)
+        
+        # Scrape content
+        text = scrape_website_text(url)
+        if text:
+            chunks = chunk_text(text)
+            for content in chunks:
+                vector = generate_embedding(content)
+                DocumentChunk.objects.create(
+                    website=website_source,
+                    tenant=active_tenant,
+                    content=content,
+                    embedding=vector
+                )
+            website_source.is_processed = True
+            website_source.save()
+        else:
+            website_source.delete()
+            raise views.serializers.ValidationError({"url": "Could not extract text from this website. Please try another URL."})
+
+    def destroy(self, request, *args, **kwargs):
+        # Chunks are deleted automatically due to on_delete=models.CASCADE
+        return super().destroy(request, *args, **kwargs)
+
+class TenantViewSet(viewsets.ModelViewSet):
+    """
+    List all agents or create a new one.
+    Creation is staff-only; listing is open for the Agent Switcher.
+    """
+    queryset = Tenant.objects.all().order_by('created_at')
+    serializer_class = TenantSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_permissions(self):
+        if self.action == 'create':
+            return [permissions.IsAdminUser()]
+        return [permissions.AllowAny()]
+
+    def perform_create(self, serializer):
+        import re
+        name = serializer.validated_data.get('name', '')
+        # Auto-generate a unique subdomain from the name
+        base_slug = re.sub(r'[^a-z0-9]', '-', name.lower()).strip('-')
+        slug = base_slug
+        counter = 1
+        while Tenant.objects.filter(subdomain=slug).exists():
+            slug = f"{base_slug}-{counter}"
+            counter += 1
+        serializer.save(subdomain=slug)
+
 class AnalyticsView(views.APIView):
     """
     Endpoint for fetching real-time dashboard analytics.
@@ -137,7 +206,7 @@ class AnalyticsView(views.APIView):
     permission_classes = [IsTenantDataOwner]
 
     def get(self, request):
-        tenant = request.user.tenant
+        tenant = getattr(request, 'tenant', None) or request.user.tenant
         queries = ChatQuery.objects.filter(tenant=tenant)
         
         total_queries = queries.count()

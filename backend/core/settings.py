@@ -105,7 +105,11 @@ REST_FRAMEWORK = {
 
 
 # CORS settings
+from corsheaders.defaults import default_headers
 CORS_ALLOW_ALL_ORIGINS = True # Change for production
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    'x-tenant-id',
+]
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/

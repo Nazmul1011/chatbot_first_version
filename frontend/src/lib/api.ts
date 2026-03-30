@@ -14,8 +14,36 @@ const api = axios.create({
 const DEMO_TOKEN = '954f728ffc6aa9e5b92f4c0e52dc78b462e101a9';
 api.defaults.headers.common['Authorization'] = `Token ${DEMO_TOKEN}`;
 
+// Dynamic Tenant Switching Interceptor
+api.interceptors.request.use((config) => {
+  if (typeof window !== 'undefined') {
+    const tenantId = localStorage.getItem('active_tenant_id');
+    if (tenantId) {
+      config.headers['X-Tenant-ID'] = tenantId;
+    }
+  }
+  return config;
+});
+
 export const setAuthToken = (token: string) => {
   api.defaults.headers.common['Authorization'] = `Token ${token}`;
+};
+
+export const setTenantId = (id: string | null) => {
+  if (id) localStorage.setItem('active_tenant_id', id);
+  else localStorage.removeItem('active_tenant_id');
+};
+
+export const getTenants = async () => {
+  return api.get('/tenants/');
+};
+
+export const createTenant = async (name: string) => {
+  return api.post('/tenants/', { name });
+};
+
+export const deleteAgent = async (id: number) => {
+  return api.delete(`/tenants/${id}/`);
 };
 
 export const uploadDocument = async (file: File) => {
@@ -40,6 +68,22 @@ export const sendChatMessage = async (question: string) => {
 
 export const getAnalytics = async () => {
   return api.get('/analytics/');
+};
+
+export const getWebsites = async () => {
+  return api.get('/websites/');
+};
+
+export const scrapeWebsite = async (url: string) => {
+  return api.post('/websites/', { url });
+};
+
+export const deleteDocument = async (id: number) => {
+  return api.delete(`/documents/${id}/`);
+};
+
+export const deleteWebsite = async (id: number) => {
+  return api.delete(`/websites/${id}/`);
 };
 
 export default api;

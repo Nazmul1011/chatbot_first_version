@@ -39,19 +39,35 @@ class KnowledgeDocument(models.Model):
     def __str__(self):
         return f"{self.title} - {self.tenant.name}"
 
+class WebsiteSource(models.Model):
+    """
+    Represents a URL that has been indexed.
+    """
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='websites')
+    url = models.URLField(max_length=500)
+    scraped_at = models.DateTimeField(auto_now_add=True)
+    is_processed = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.url} - {self.tenant.name}"
+
 class DocumentChunk(models.Model):
     """
     Stores individual text chunks and their corresponding vector embeddings.
     Used for RAG retrieval.
     """
-    document = models.ForeignKey(KnowledgeDocument, on_delete=models.CASCADE, related_name='chunks')
+    # Polymorphic: Can belong to either a PDF document OR a website URL
+    document = models.ForeignKey(KnowledgeDocument, on_delete=models.CASCADE, null=True, blank=True, related_name='chunks')
+    website = models.ForeignKey(WebsiteSource, on_delete=models.CASCADE, null=True, blank=True, related_name='chunks')
+    
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name='chunks')
     content = models.TextField()
     # Using 384 dimensions for all-MiniLM-L6-v2 embeddings
     embedding = VectorField(dimensions=384) 
     
     def __str__(self):
-        return f"Chunk from {self.document.title} ({self.tenant.name})"
+        name = self.document.title if self.document else self.website.url
+        return f"Chunk from {name} ({self.tenant.name})"
 
 class ChatQuery(models.Model):
     """

@@ -1,169 +1,216 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
-import { MessageSquare, Send, Bot, User, Minimize2, Maximize2, Loader2, X } from "lucide-react";
-import { sendChatMessage } from "@/lib/api";
+import React, { useState, useRef, useEffect } from "react";
+import { MessageSquare, X, Send, Bot, User, Loader2, Sparkles, Maximize2, Minimize2, Trash2 } from "lucide-react";
 import { clsx } from "clsx";
-import ReactMarkdown from "react-markdown";
+import { sendChatMessage } from "@/lib/api";
+
+type Message = {
+  role: "bot" | "user";
+  content: string;
+};
 
 export default function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
-  const [isMinimized, setIsMinimized] = useState(false);
-  const [messages, setMessages] = useState<{role: 'user' | 'agent', content: string}[]>([
-    { role: 'agent', content: "Hello! I'm your AI assistant. How can I help you today?" }
-  ]);
+  const [isMaximized, setIsMaximized] = useState(false);
   const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [isClient, setIsClient] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Initialize from localStorage on mount
+  // 1. Load messages from localStorage on mount
   useEffect(() => {
-    setIsClient(true);
-    const savedMessages = localStorage.getItem('chatAgent_messages');
-    const savedIsOpen = localStorage.getItem('chatAgent_isOpen');
-    const savedIsMinimized = localStorage.getItem('chatAgent_isMinimized');
-
-    if (savedMessages) {
-      try { setMessages(JSON.parse(savedMessages)); } catch (e) {}
+    const saved = localStorage.getItem('agent_chat_history');
+    if (saved) {
+      try {
+        setMessages(JSON.parse(saved));
+      } catch (e) {
+        setMessages([{ role: "bot", content: "Hello! I'm your AI Support assistant. How can I help you today?" }]);
+      }
+    } else {
+      setMessages([{ role: "bot", content: "Hello! I'm your AI Support assistant. How can I help you today?" }]);
     }
-    if (savedIsOpen === 'true') setIsOpen(true);
-    if (savedIsMinimized === 'true') setIsMinimized(true);
   }, []);
 
-  // Save to localStorage on change
+  // 2. Save messages to localStorage whenever they change
   useEffect(() => {
-    if (isClient) {
-      localStorage.setItem('chatAgent_messages', JSON.stringify(messages));
-      localStorage.setItem('chatAgent_isOpen', isOpen.toString());
-      localStorage.setItem('chatAgent_isMinimized', isMinimized.toString());
-    }
-  }, [messages, isOpen, isMinimized, isClient]);
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (messages.length > 0) {
+      localStorage.setItem('agent_chat_history', JSON.stringify(messages));
     }
   }, [messages]);
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
-    const userMessage = input.trim();
-    setInput("");
-    setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
-    setIsLoading(true);
+  useEffect(() => {
+    if (isOpen) scrollToBottom();
+  }, [messages, isOpen]);
 
-    try {
-      const { data } = await sendChatMessage(userMessage);
-      setMessages(prev => [...prev, { role: 'agent', content: data.answer }]);
-    } catch (err: any) {
-      setMessages(prev => [...prev, { role: 'agent', content: "Sorry, I'm having trouble connecting to the brain. Please try again." }]);
-    } finally {
-      setIsLoading(false);
+  const clearChat = () => {
+    if (confirm("Clear your conversation history?")) {
+      const initial = [{ role: "bot", content: "Hello! I'm your AI Support assistant. How can I help you today?" }];
+      setMessages(initial);
+      localStorage.setItem('agent_chat_history', JSON.stringify(initial));
     }
   };
 
-  if (!isClient) return null; // Prevent hydration mismatch
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || loading) return;
 
-  if (!isOpen) {
-    return (
-      <button 
-        onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 w-16 h-16 bg-primary-600 hover:bg-primary-700 text-white rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 group"
-      >
-        <MessageSquare size={28} className="group-hover:animate-pulse" />
-      </button>
-    );
-  }
+    const userMessage = input.trim();
+    setInput("");
+    setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
+    setLoading(true);
+
+    try {
+      const { data } = await sendChatMessage(userMessage);
+      setMessages((prev) => [...prev, { role: "bot", content: data.answer }]);
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        { role: "bot", content: "Sorry, I'm having trouble connecting right now. Please try again later." },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className={clsx(
-      "fixed bottom-6 right-6 bg-white rounded-2xl shadow-2xl flex flex-col transition-all border border-gray-100 overflow-hidden z-50",
-      isMinimized ? "h-16 w-64" : "h-[500px] w-96"
-    )}>
-      {/* Header */}
-      <div className="bg-primary-600 p-4 text-white flex justify-between items-center shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
-            <Bot size={18} />
+    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
+      {/* Chat Window */}
+      {isOpen && (
+        <div
+          className={clsx(
+            "bg-white shadow-2xl rounded-3xl border border-gray-100 flex flex-col mb-4 transition-all duration-500 ease-out overflow-hidden transform origin-bottom-right",
+            isMaximized ? "w-[90vw] h-[85vh] fixed inset-6 md:w-[60vw] md:h-[80vh] md:relative md:inset-auto" : "w-[380px] h-[580px]"
+          )}
+        >
+          {/* High-End Header */}
+          <div className="bg-slate-900 px-6 py-5 flex items-center justify-between text-white relative overflow-hidden">
+             <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/20 blur-3xl rounded-full" />
+             
+             <div className="flex items-center gap-3 relative z-10">
+                <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-600/30">
+                   <Bot size={22} className="text-white" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm tracking-tight">Support Agent</h3>
+                  <div className="flex items-center gap-1.5 ">
+                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                     <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Online & Persistent</span>
+                  </div>
+                </div>
+             </div>
+             
+             <div className="flex items-center gap-2 relative z-10">
+                <button 
+                   onClick={clearChat}
+                   title="Clear Chat"
+                   className="p-2 hover:bg-rose-500/20 rounded-lg text-slate-400 hover:text-rose-400 transition-colors"
+                >
+                   <Trash2 size={16} />
+                </button>
+                <button 
+                   onClick={() => setIsMaximized(!isMaximized)}
+                   className="p-2 hover:bg-white/10 rounded-lg text-slate-400 transition-colors hidden md:block"
+                >
+                   {isMaximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                </button>
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className="p-2 hover:bg-white/10 rounded-lg text-slate-400 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+             </div>
           </div>
-          <div>
-            <p className="text-sm font-bold">Support Agent</p>
-            <p className="text-[10px] opacity-80 uppercase tracking-widest font-bold">Online</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-1">
-          <button onClick={() => setIsMinimized(!isMinimized)} className="p-1 hover:bg-white/10 rounded transition-colors">
-            {isMinimized ? <Maximize2 size={16} /> : <Minimize2 size={16} />}
-          </button>
-          <button onClick={() => setIsOpen(false)} className="p-1 hover:bg-white/10 rounded transition-colors">
-            <X size={16} />
-          </button>
-        </div>
-      </div>
 
-      {!isMinimized && (
-        <>
-          {/* Messages */}
-          <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/50">
-            {messages.map((msg, i) => (
-              <div key={i} className={clsx("flex gap-3", msg.role === 'user' ? "flex-row-reverse" : "flex-row")}>
-                <div className={clsx(
-                  "w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-1",
-                  msg.role === 'user' ? "bg-primary-100 text-primary-700" : "bg-white border border-gray-200 text-gray-500"
-                )}>
-                  {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
-                </div>
-                <div className={clsx(
-                  "max-w-[80%] p-3 text-sm rounded-2xl",
-                   msg.role === 'user' 
-                    ? "bg-primary-600 text-white rounded-tr-none shadow-md shadow-primary-500/10" 
-                    : "bg-white border border-gray-100 text-gray-800 rounded-tl-none shadow-sm"
-                )}>
-                  {msg.role === 'user' ? (
-                    msg.content
-                  ) : (
-                    <div className="prose prose-sm max-w-none prose-p:leading-relaxed prose-pre:bg-gray-50 prose-pre:text-gray-800">
-                      <ReactMarkdown>{msg.content}</ReactMarkdown>
-                    </div>
+          {/* Messages Area */}
+          <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50/50 custom-scrollbar relative">
+            <div className="absolute inset-0 opacity-10 pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]" />
+
+            {messages.map((m, i) => (
+              <div
+                key={i}
+                className={clsx(
+                  "flex items-start gap-3 animate-in slide-in-from-bottom-2 duration-300",
+                  m.role === "bot" ? "justify-start" : "justify-end"
+                )}
+              >
+                {m.role === "bot" && (
+                  <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0 mt-1 shadow-sm">
+                    <Bot size={14} className="text-blue-600" />
+                  </div>
+                )}
+                <div
+                  className={clsx(
+                    "max-w-[75%] px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-sm relative z-10",
+                    m.role === "bot" 
+                       ? "bg-white text-gray-800 border border-gray-100 rounded-tl-none" 
+                       : "bg-blue-600 text-white rounded-tr-none"
                   )}
+                >
+                  {m.content}
                 </div>
+                {m.role === "user" && (
+                  <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center flex-shrink-0 mt-1 shadow-sm">
+                    <User size={14} className="text-white" />
+                  </div>
+                )}
               </div>
             ))}
-            {isLoading && (
-              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-lg bg-white border border-gray-100 text-gray-400 flex items-center justify-center">
-                  <Bot size={16} />
+            {loading && (
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center animate-bounce">
+                  <Bot size={14} className="text-blue-600" />
                 </div>
-                <div className="bg-white border border-gray-100 p-3 rounded-2xl rounded-tl-none shadow-sm flex items-center gap-2">
-                  <div className="w-1 h-1 bg-gray-300 rounded-full animate-bounce" />
-                  <div className="w-1 h-1 bg-gray-300 rounded-full animate-bounce [animation-delay:0.2s]" />
-                  <div className="w-1 h-1 bg-gray-300 rounded-full animate-bounce [animation-delay:0.4s]" />
+                <div className="bg-white px-4 py-3 rounded-2xl shadow-sm border border-gray-100 text-xs text-gray-400 flex items-center gap-2">
+                   <Loader2 size={12} className="animate-spin text-blue-600" />
+                   Thinking...
                 </div>
               </div>
             )}
+            <div ref={messagesEndRef} />
           </div>
 
-          {/* Input */}
-          <form onSubmit={handleSend} className="p-4 bg-white border-t border-gray-100 flex gap-2">
-            <input 
-              type="text" 
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Type your message..."
-              className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
-            />
-            <button 
-              type="submit"
-              disabled={!input.trim() || isLoading}
-              className="p-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl transition-all disabled:opacity-50 disabled:hover:bg-primary-600 shadow-md shadow-primary-500/20"
-            >
-              <Send size={18} />
-            </button>
-          </form>
-        </>
+          {/* Premium Input Section */}
+          <div className="p-5 bg-white border-t border-gray-100 relative z-20">
+            <form onSubmit={handleSend} className="relative flex items-center gap-2 group">
+              <input
+                type="text"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Message Support..."
+                disabled={loading}
+                className="flex-1 bg-gray-50 border border-gray-200 rounded-2xl px-5 py-4 text-sm outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all font-medium"
+              />
+              <button
+                type="submit"
+                disabled={loading || !input.trim()}
+                className="w-12 h-12 bg-blue-600 rounded-[1.125rem] flex items-center justify-center text-white shadow-xl shadow-blue-600/20 hover:bg-blue-700 active:scale-95 transition-all disabled:opacity-50 disabled:bg-gray-400"
+              >
+                <Send size={18} />
+              </button>
+            </form>
+            <div className="flex items-center justify-center gap-1.5 mt-4 opacity-30">
+               <Sparkles size={10} className="text-blue-600" />
+               <span className="text-[9px] font-black uppercase tracking-widest text-slate-900">Session Memory Enabled</span>
+            </div>
+          </div>
+        </div>
       )}
+
+      {/* Toggle Button */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={clsx(
+          "w-16 h-16 rounded-2xl shadow-2xl flex items-center justify-center text-white transition-all duration-500 hover:scale-105 active:scale-95 group relative",
+          isOpen ? "bg-slate-900" : "bg-blue-600 shadow-blue-600/30"
+        )}
+      >
+        {isOpen ? <X size={28} /> : <MessageSquare size={28} />}
+      </button>
     </div>
   );
 }

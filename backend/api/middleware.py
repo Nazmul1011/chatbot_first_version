@@ -14,9 +14,8 @@ class DevAuthMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        if settings.DEBUG and not request.user.is_authenticated:
-            # Look for or create a demo user/tenant
-            tenant, _ = Tenant.objects.get_or_create(name="Demo Company")
+        if settings.DEBUG and (not hasattr(request, 'user') or not request.user.is_authenticated):
+            tenant, _ = Tenant.objects.get_or_create(name="Demo Company", defaults={"subdomain": "demo"})
             user, created = User.objects.get_or_create(
                 username="demo_user",
                 defaults={"is_staff": True, "is_superuser": True, "tenant": tenant}
@@ -24,9 +23,21 @@ class DevAuthMiddleware:
             if created:
                 user.set_password("demo_pass")
                 user.save()
-            
-            # Manually assign the user to the request
             request.user = user
+
+        # Set default tenant
+        request.tenant = getattr(request.user, 'tenant', None) if request.user.is_authenticated else None
+
+        # Override if Switcher is used
+        tenant_id = request.headers.get('X-Tenant-ID')
+        if tenant_id and request.user.is_authenticated:
+            try:
+                # Force switch for staff only
+                if request.user.is_staff:
+                    request.tenant = Tenant.objects.get(id=tenant_id)
+                    # Sync back to user object for serializers/logic
+                    request.user.tenant = request.tenant
+            except (Tenant.DoesNotExist, ValueError):
+                pass
             
-        response = self.get_response(request)
-        return response
+        return self.get_response(request)
