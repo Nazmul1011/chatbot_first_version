@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     
     # Local
     'api',
+    'marketing',
 ]
 
 MIDDLEWARE = [
@@ -109,6 +110,7 @@ from corsheaders.defaults import default_headers
 CORS_ALLOW_ALL_ORIGINS = True # Change for production
 CORS_ALLOW_HEADERS = list(default_headers) + [
     'x-tenant-id',
+    'x-public-api-key',
 ]
 
 # Internationalization

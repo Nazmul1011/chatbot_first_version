@@ -50,7 +50,7 @@ export const uploadDocument = async (file: File) => {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('title', file.name);
-  
+
   return api.post('/documents/', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
@@ -84,6 +84,36 @@ export const deleteDocument = async (id: number) => {
 
 export const deleteWebsite = async (id: number) => {
   return api.delete(`/websites/${id}/`);
+};
+
+// --- Marketing Agent API ---
+
+export const getMarketingAgents = async () => {
+  return api.get('/marketing-agent/agents/');
+};
+
+export const createMarketingAgent = async (data: any) => {
+  return api.post('/marketing-agent/agents/', data);
+};
+
+export const updateMarketingAgent = async (id: string, data: any) => {
+  return api.patch(`/marketing-agent/agents/${id}/`, data);
+};
+
+export const deleteMarketingAgent = async (id: string) => {
+  return api.delete(`/marketing-agent/agents/${id}/`);
+};
+
+export const getMarketingLeads = async (agentId: string) => {
+  return api.get(`/marketing-agent/${agentId}/leads/`);
+};
+
+export const sendMarketingChat = async (agentKey: string, question: string, sessionId?: string) => {
+  return api.post('/marketing-agent/chat/', { question, session_id: sessionId }, {
+    headers: {
+      'X-Public-API-Key': agentKey
+    }
+  });
 };
 
 export default api;

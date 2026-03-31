@@ -1,14 +1,15 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { 
-  BarChart3, 
-  FileText, 
-  MessageSquare, 
-  LayoutDashboard, 
-  Settings, 
+import {
+  BarChart3,
+  FileText,
+  MessageSquare,
+  LayoutDashboard,
+  Settings,
   LogOut,
-  Bot
+  Bot,
+  TrendingUp,
 } from "lucide-react";
 import { clsx } from "clsx";
 import ChatWidget from "@/components/ChatWidget";
@@ -19,6 +20,7 @@ const navItems = [
   { icon: FileText, label: "Documents", href: "/dashboard/documents" },
   { icon: BarChart3, label: "Analytics", href: "/dashboard/analytics" },
   { icon: MessageSquare, label: "Test Agent", href: "/dashboard/test-agent" },
+  { icon: TrendingUp, label: "Marketing Agents", href: "/dashboard/marketing-agents" },
   { icon: Settings, label: "Settings", href: "/dashboard/settings" },
 ];
 
@@ -41,16 +43,16 @@ export default function DashboardLayout({
         <div className="px-4">
           <TenantSwitcher />
         </div>
-        
+
         <nav className="flex-1 p-4 space-y-2">
           {navItems.map((item) => (
-            <Link 
+            <Link
               key={item.href}
               href={item.href}
               className={clsx(
                 "flex items-center gap-3 px-4 py-2.5 rounded-lg transition-all",
-                pathname === item.href 
-                  ? "bg-primary-600/20 text-primary-400 border border-primary-600/30" 
+                pathname === item.href
+                  ? "bg-primary-600/20 text-primary-400 border border-primary-600/30"
                   : "text-slate-400 hover:bg-slate-800 hover:text-white"
               )}
             >
@@ -59,7 +61,7 @@ export default function DashboardLayout({
             </Link>
           ))}
         </nav>
-        
+
         <div className="p-4 border-t border-slate-800">
           <button className="flex items-center gap-3 px-4 py-2 text-slate-400 hover:text-white transition-colors w-full">
             <LogOut size={20} />
@@ -75,10 +77,10 @@ export default function DashboardLayout({
             {navItems.find(item => item.href === pathname)?.label || "Dashboard"}
           </h2>
           <div className="flex items-center gap-4">
-             {/* Header icons or user profile can go here */}
+            {/* Header icons or user profile can go here */}
           </div>
         </header>
-        
+
 
         <div className="p-8">
           {children}
