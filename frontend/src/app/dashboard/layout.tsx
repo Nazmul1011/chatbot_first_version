@@ -11,6 +11,7 @@ import {
   Bot,
   TrendingUp,
   Users,
+  Paintbrush,
 } from "lucide-react";
 import { clsx } from "clsx";
 import ChatWidget from "@/components/ChatWidget";
@@ -21,6 +22,7 @@ const navItems = [
   { icon: FileText, label: "Documents", href: "/dashboard/documents" },
   { icon: BarChart3, label: "Analytics", href: "/dashboard/analytics" },
   { icon: TrendingUp, label: "Marketing Agents", href: "/dashboard/marketing-agents" },
+  { icon: Paintbrush, label: "UI Library", href: "/dashboard/ui-library" },
   { icon: Users, label: "Leads Hub", href: "/dashboard/leads" },
   { icon: Settings, label: "Settings", href: "/dashboard/settings" },
 ];
