@@ -1,8 +1,8 @@
 "use client";
 import React, { useState, useRef, useEffect } from "react";
-import { MessageSquare, X, Send, Bot, User, Loader2, Sparkles, Trash2, TrendingUp, ShieldCheck } from "lucide-react";
+import { MessageSquare, X, Send, Bot, User, Loader2, Sparkles, Trash2, TrendingUp, ShieldCheck, Plus, Smile, Maximize2, MoreHorizontal, ArrowUp } from "lucide-react";
 import { clsx } from "clsx";
-import { sendChatMessage, sendMarketingChat, getMarketingAgents } from "@/lib/api";
+import { sendChatMessage, getMarketingAgents } from "@/lib/api";
 
 type Message = {
   role: "bot" | "user";
@@ -11,7 +11,27 @@ type Message = {
 
 export default function ChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
-  const [mode, setMode] = useState<'support' | 'sales'>('support');
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [showPrivacy, setShowPrivacy] = useState(true);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Management Detection
+  const [marketingId, setMarketingId] = useState<string | null>(null);
+
+  // Environment Isolation Logic
+  const getEnvironment = () => {
+    if (typeof window !== 'undefined' && window.top !== window) return 'live';
+    return 'preview';
+  };
+
+  const getTenantKey = () => {
+    const tenantId = localStorage.getItem('active_tenant_id') || 'default';
+    const env = getEnvironment();
+    return `chat_history_${env}_${tenantId}_master`;
+  };
 
   // RESIZE RADAR: Tell the parent website to expand/shrink the iframe
   useEffect(() => {
@@ -19,35 +39,11 @@ export default function ChatWidget() {
        window.parent.postMessage({ type: isOpen ? 'CHAT_OPEN' : 'CHAT_CLOSE' }, '*');
     }
   }, [isOpen]);
-  const [input, setInput] = useState("");
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Environment Isolation Logic
-  const getEnvironment = () => {
-    // If we are inside an iframe, it's a live customer! 🏙️
-    if (typeof window !== 'undefined' && window.top !== window) return 'live';
-    // If not, we are in the Dashboard testing! 🏢
-    return 'preview';
-  };
-
-  const getTenantKey = (m: string) => {
-    const tenantId = localStorage.getItem('active_tenant_id') || 'default';
-    const env = getEnvironment();
-    return `chat_history_${env}_${tenantId}_${m}`;
-  };
-
-  // Marketing Key Detection (Simulating embed behavior)
-  const [marketingId, setMarketingId] = useState<string | null>(null);
-
+  // Initial Sync
   useEffect(() => {
     const initWidget = async () => {
-      // 1. Check if ID is in storage or URL
       let mId = localStorage.getItem('active_marketing_id');
-
-      // 2. Dashboard Intelligence: Validate agent exists, otherwise clear everything
       try {
         const { data } = await getMarketingAgents();
         if (data && data.length > 0) {
@@ -55,51 +51,37 @@ export default function ChatWidget() {
           localStorage.setItem('active_marketing_id', mId!);
           setMarketingId(mId);
         } else {
-          // TOTAL PURGE: No agents exist, so kill the ghost keys
           localStorage.removeItem('active_marketing_id');
-          localStorage.removeItem('chat_history_sales');
           setMarketingId(null);
-          setMode('support');
         }
-      } catch (e) {
-        console.error("Agent validation failed", e);
-        // Fallback to what was in storage if API fails, or hide if nothing
-        setMarketingId(localStorage.getItem('active_marketing_id'));
-      }
+      } catch (e) { console.error("Agent validation failed", e); }
     };
-
     initWidget();
   }, []);
 
-  // 1. Load messages — tenant-scoped so each company has its own history
+  // Load / Save Messages
   useEffect(() => {
-    const storageKey = getTenantKey(mode);
-    const saved = localStorage.getItem(storageKey);
+    const saved = localStorage.getItem(getTenantKey());
     if (saved) {
-      try {
-        setMessages(JSON.parse(saved));
-      } catch (e) {
-        setMessages([{ role: "bot", content: mode === 'support' ? "Hello! How can I help with support?" : "Hi! I'm your sales expert. Interested in our special offers?" }]);
-      }
+      try { setMessages(JSON.parse(saved)); } catch (e) { setMessages([{ role: "bot", content: "Hello! I'm your AI assistant. How can I help you today?" }]); }
     } else {
-      setMessages([{ role: "bot", content: mode === 'support' ? "Hello! How can I help with support?" : "Hi! I'm your sales expert. Interested in our special offers?" }]);
+      setMessages([{ role: "bot", content: "Hello! I'm your AI assistant. How can I help you today?" }]);
     }
-  }, [mode]);
+  }, []);
 
-  // 2. Save messages — tenant-scoped
   useEffect(() => {
     if (messages.length > 0) {
-      localStorage.setItem(getTenantKey(mode), JSON.stringify(messages));
+      localStorage.setItem(getTenantKey(), JSON.stringify(messages));
     }
-  }, [messages, mode]);
+  }, [messages]);
 
   const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   useEffect(() => { if (isOpen) scrollToBottom(); }, [messages, isOpen]);
 
   const clearChat = () => {
-    const initial = [{ role: "bot", content: mode === 'support' ? "Support chat reset." : "Sales chat reset." }] as Message[];
+    const initial = [{ role: "bot", content: "Chat reset. How can I help you now?" }] as Message[];
     setMessages(initial);
-    localStorage.setItem(getTenantKey(mode), JSON.stringify(initial));
+    localStorage.setItem(getTenantKey(), JSON.stringify(initial));
   };
 
   const handleSend = async (e: React.FormEvent) => {
@@ -112,16 +94,11 @@ export default function ChatWidget() {
     setLoading(true);
 
     try {
-      if (mode === 'support') {
-        const { data } = await sendChatMessage(userMessage);
-        setMessages((prev) => [...prev, { role: "bot", content: data.answer }]);
-      } else {
-        const { data } = await sendMarketingChat(marketingId!, userMessage, sessionId || undefined);
-        setMessages((prev) => [...prev, { role: "bot", content: data.reply }]);
-        if (data.session_id) setSessionId(data.session_id);
-      }
+      const { data } = await sendChatMessage(userMessage, sessionId || undefined);
+      setMessages((prev) => [...prev, { role: "bot", content: data.answer }]);
+      if (data.session_id) setSessionId(data.session_id);
     } catch (err: any) {
-      setMessages((prev) => [...prev, { role: "bot", content: "AI link unstable. Please try again." }]);
+      setMessages((prev) => [...prev, { role: "bot", content: "Agent connection timed out. Retrying..." }]);
     } finally {
       setLoading(false);
     }
@@ -131,67 +108,97 @@ export default function ChatWidget() {
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end outline-none select-none">
       {/* Chat Window */}
       {isOpen && (
-        <div className="bg-white shadow-2xl rounded-[2.5rem] border border-gray-100 flex flex-col mb-4 transition-all duration-500 w-[400px] h-[640px] overflow-hidden transform origin-bottom-right">
+        <div className="bg-[#F9F9F9] shadow-[0_20px_50px_rgba(0,0,0,0.1)] rounded-[2.5rem] border border-white/50 flex flex-col mb-4 transition-all duration-500 w-[420px] h-[720px] overflow-hidden transform origin-bottom-right">
+          
+          {/* THE NEW FLOATING HEADER SYSTEM */}
+          <div className="px-6 py-6 flex flex-col items-center relative">
+             <div className="absolute top-4 left-6 flex gap-4">
+                <button className="p-2 bg-white/40 hover:bg-white rounded-full transition-all text-slate-600 shadow-sm"><Maximize2 size={16} /></button>
+             </div>
+             <div className="absolute top-4 right-6 flex gap-2">
+                <button className="p-2 bg-white/40 hover:bg-white rounded-full transition-all text-slate-600 shadow-sm"><MoreHorizontal size={18} /></button>
+                <button onClick={() => setIsOpen(false)} className="p-2 bg-white/80 hover:bg-white rounded-full transition-all text-slate-600 shadow-sm"><X size={18} /></button>
+             </div>
 
-          {/* Hybrid Header */}
-          <div className="bg-slate-900 px-8 py-6 flex flex-col gap-4 text-white relative">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/20 blur-3xl rounded-full" />
-            <div className="flex items-center justify-between relative z-10">
-              <div className="flex items-center gap-3">
-                <div className={clsx("w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transition-all", mode === 'support' ? "bg-blue-600" : "bg-emerald-500")}>
-                  {mode === 'support' ? <ShieldCheck size={24} /> : <TrendingUp size={24} />}
+             {/* Center Brand Card */}
+             <div className="bg-white px-6 py-4 rounded-[2rem] shadow-xl shadow-black/5 flex items-center gap-4 mt-8 border border-white">
+                <div className="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center relative shadow-inner">
+                   <div className="absolute top-0 right-0 w-3.5 h-3.5 bg-emerald-500 rounded-full border-2 border-white" />
+                   <Sparkles size={20} className="text-pink-200" />
                 </div>
-                <div>
-                  <h3 className="font-black text-lg tracking-tight uppercase leading-none mb-1">{mode === 'support' ? "Support" : "Sales"}</h3>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none">{mode === 'support' ? "Help Center" : "Offer Hub"}</p>
+                <div className="text-left">
+                   <h1 className="font-bold text-lg text-slate-800 leading-none">AI Support</h1>
+                   <p className="text-[11px] font-medium text-slate-400 mt-0.5">AI assistant</p>
                 </div>
-              </div>
-              <div className="flex gap-2">
-                <button onClick={clearChat} className="p-2 hover:bg-white/10 rounded-xl transition-all"><Trash2 size={16} /></button>
-                <button onClick={() => setIsOpen(false)} className="p-2 hover:bg-white/10 rounded-xl transition-all"><X size={20} /></button>
-              </div>
-            </div>
-
-            {/* THE HYBRID TOGGLE BRIDGE */}
-            {marketingId && (
-              <div className="bg-white/5 p-1 rounded-2xl flex relative z-10 border border-white/5 backdrop-blur-sm">
-                <button onClick={() => setMode('support')} className={clsx("flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all flex items-center justify-center", mode === 'support' ? "bg-white text-slate-900 shadow-xl" : "text-slate-400 hover:text-white")}>SUPPORT</button>
-                <button onClick={() => setMode('sales')} className={clsx("flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all flex items-center justify-center", mode === 'sales' ? "bg-emerald-500 text-white shadow-xl" : "text-slate-400 hover:text-white")}>SALES</button>
-              </div>
-            )}
+             </div>
           </div>
 
           {/* Messages Area */}
-          <div className="flex-1 overflow-y-auto p-8 space-y-6 bg-gray-50/50 custom-scrollbar scroll-smooth">
+          <div className="flex-1 overflow-y-auto px-8 py-4 space-y-6 custom-scrollbar scroll-smooth">
             {messages.map((m, i) => (
-              <div key={i} className={clsx("flex items-start gap-4 animate-in slide-in-from-bottom-2 duration-300", m.role === "bot" ? "justify-start" : "justify-end")}>
+              <div key={i} className={clsx("flex items-start gap-3", m.role === "bot" ? "justify-start" : "justify-end")}>
                 {m.role === "bot" && (
-                  <div className={clsx("w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 mt-1 shadow-sm", mode === 'support' ? "bg-blue-100 text-blue-600" : "bg-emerald-100 text-emerald-600")}>
-                    {mode === 'support' ? <Bot size={18} /> : <Sparkles size={18} />}
+                  <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center mt-1 shrink-0 shadow-sm">
+                    <Sparkles size={14} className="text-pink-100" />
                   </div>
                 )}
-                <div className={clsx("max-w-[70%] px-5 py-4 rounded-[2rem] text-sm leading-relaxed shadow-sm font-medium", m.role === "bot" ? "bg-white text-gray-800 border" : "bg-slate-900 border border-slate-800 text-white")}>
+                <div className={clsx(
+                  "max-w-[80%] px-5 py-4 rounded-[1.8rem] text-sm leading-relaxed shadow-sm font-medium",
+                  m.role === "bot" ? "bg-white text-slate-700 border border-slate-100" : "bg-slate-800 text-white shadow-lg"
+                )}>
                   {m.content}
                 </div>
               </div>
             ))}
             {loading && (
-              <div className="flex items-center gap-3 animate-pulse">
-                <Loader2 size={16} className="animate-spin text-blue-600" />
-                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Routing to {mode}...</span>
-              </div>
+               <div className="flex items-center gap-2 px-12 animate-pulse">
+                  <div className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-bounce" />
+                  <div className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-bounce [animation-delay:0.2s]" />
+                  <div className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-bounce [animation-delay:0.4s]" />
+               </div>
             )}
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input Section */}
-          <div className="p-8 bg-white border-t">
-            <form onSubmit={handleSend} className="relative flex items-center gap-4">
-              <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Type a message..." className="flex-1 bg-slate-50 border border-slate-100 rounded-3xl px-8 py-5 text-sm outline-none focus:bg-white focus:border-blue-500 transition-all font-semibold" />
-              <button disabled={loading || !input.trim()} type="submit" className={clsx("w-14 h-14 rounded-2xl flex items-center justify-center text-white shadow-2xl transition-all", mode === 'support' ? "bg-blue-600 shadow-blue-200" : "bg-emerald-500 shadow-emerald-200")}>
-                <Send size={20} />
-              </button>
-            </form>
+          {/* Footer UI: Privacy and Input */}
+          <div className="px-6 pb-6 pt-0 flex flex-col gap-3">
+             
+             {/* Privacy Card */}
+             {showPrivacy && (
+               <div className="bg-white/80 backdrop-blur-md border border-white p-5 rounded-[1.8rem] shadow-xl shadow-black/5 relative animate-in slide-in-from-bottom-4 duration-500">
+                  <button onClick={() => setShowPrivacy(false)} className="absolute top-4 right-4 w-6 h-6 bg-slate-100 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 transition-all"><X size={12} /></button>
+                  <p className="text-[11px] leading-relaxed text-slate-500 font-medium pr-6">
+                    By chatting here, you agree we and authorized partners may process, monitor, and record this chat. 
+                    <span className="text-slate-800 font-bold ml-1 cursor-pointer underline">Privacy Policy</span>.
+                  </p>
+               </div>
+             )}
+
+             {/* Input Bar */}
+             <form onSubmit={handleSend} className="relative flex items-center bg-white rounded-full p-2 shadow-xl shadow-black/5 border border-white">
+                <button type="button" className="w-11 h-11 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-all"><Plus size={20} /></button>
+                <input 
+                  value={input} 
+                  onChange={(e) => setInput(e.target.value)} 
+                  placeholder="Write a message..." 
+                  className="flex-1 bg-transparent px-4 py-3 text-sm outline-none font-medium text-slate-700 placeholder:text-slate-400" 
+                />
+                <button type="button" className="w-11 h-11 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-all"><Smile size={20} /></button>
+                <button 
+                  disabled={loading || !input.trim()} 
+                  type="submit" 
+                  className={clsx(
+                    "w-11 h-11 rounded-full flex items-center justify-center transition-all shadow-lg",
+                    input.trim() ? "bg-slate-200 text-slate-600 scale-100" : "bg-slate-50 text-slate-300 scale-90"
+                  )}
+                >
+                  <ArrowUp size={20} strokeWidth={3} />
+                </button>
+             </form>
+
+             <div className="text-center">
+                <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest leading-none">Powered by <span className="text-slate-400">Agentic Platform</span></p>
+             </div>
           </div>
         </div>
       )}
@@ -199,12 +206,12 @@ export default function ChatWidget() {
       {/* Floating Launcher */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={clsx("w-20 h-20 rounded-[2.5rem] shadow-2xl flex items-center justify-center text-white transition-all duration-500 hover:scale-110 active:scale-95 group relative", isOpen ? "bg-slate-900" : "bg-blue-600 shadow-blue-600/30")}
+        className={clsx("w-20 h-20 rounded-full shadow-2xl flex items-center justify-center text-white transition-all duration-500 hover:scale-110 active:scale-95 group relative", isOpen ? "bg-slate-900 border-4 border-white" : "bg-blue-600 shadow-blue-500/30 overflow-hidden")}
       >
         {isOpen ? <X size={32} /> : (
-          <div className="relative">
-            <MessageSquare size={32} />
-            {marketingId && <div className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-400 rounded-full border-4 border-blue-600 animate-pulse" />}
+          <div className="relative w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-600 to-indigo-700">
+             <MessageSquare size={32} />
+             <div className="absolute top-5 right-5 w-3 h-3 bg-emerald-400 rounded-full border-2 border-white animate-pulse" />
           </div>
         )}
       </button>

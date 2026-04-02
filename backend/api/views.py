@@ -3,7 +3,11 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 from .models import KnowledgeDocument, DocumentChunk, Tenant, ChatQuery, WebsiteSource
 from .permissions import IsTenantDataOwner, TenantQuerySetMixin
+from marketing.models import MarketingAgent, CapturedLead, MarketingConversation
+from marketing.serializers import CapturedLeadSerializer
 import time
+import re
+import uuid
 from django.db.models import Avg
 from django.utils import timezone
 from datetime import timedelta
@@ -15,19 +19,15 @@ from .serializers import (
     TenantSerializer
 )
 from pgvector.django import CosineDistance
+from openai import OpenAI
 
 class DocumentViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
-    """
-    Handles listing, retrieving, and uploading documents.
-    Automatically filters by the user's tenant.
-    """
     queryset = KnowledgeDocument.objects.all()
     serializer_class = KnowledgeDocumentSerializer
     permission_classes = [IsTenantDataOwner]
     parser_classes = [MultiPartParser, FormParser]
 
     def perform_create(self, serializer):
-        # Use active tenant from switcher (request.tenant), not the DB user's fixed tenant
         active_tenant = getattr(self.request, 'tenant', None) or self.request.user.tenant
         doc = serializer.save(tenant=active_tenant)
         self.process_document(doc)
@@ -35,7 +35,6 @@ class DocumentViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
     def process_document(self, doc):
         text = extract_text_from_file(doc.file.path)
         chunks = chunk_text(text)
-        
         for content in chunks:
             vector = generate_embedding(content)
             DocumentChunk.objects.create(
@@ -44,190 +43,129 @@ class DocumentViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
                 content=content,
                 embedding=vector
             )
-        
         doc.is_processed = True
         doc.save()
 
+class OracleOrchestrator:
+    @staticmethod
+    def classify_intent(agent, question):
+        if not agent: return "SUPPORT"
+        
+        client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=agent.api_key
+        )
+        prompt = f"""Classify the user intent into exactly one word: 'SALES' or 'SUPPORT'.
+'SALES' = Asking about deals, pricing, buying something, interested in offers.
+'SUPPORT' = General questions, complaints, tech help.
+
+User: "{question}"
+Intent:"""
+        try:
+            response = client.chat.completions.create(
+                model="qwen/qwen3.6-plus-preview:free",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=10
+            )
+            intent = response.choices[0].message.content.strip().upper()
+            return "SALES" if "SALES" in intent else "SUPPORT"
+        except:
+            return "SUPPORT"
+
 class ChatAgentView(views.APIView):
-    """
-    Endpoint for querying the AI agent.
-    Retrieves relevant chunks from the database using vector search.
-    """
     permission_classes = [IsTenantDataOwner]
 
     def post(self, request):
         serializer = ChatRequestSerializer(data=request.data)
-        if serializer.is_valid():
-            question = serializer.validated_data['question']
-            # Use active tenant from switcher (request.tenant), not the DB user's fixed tenant
-            tenant = getattr(request, 'tenant', None) or request.user.tenant
-            
-            # 1. Generate embedding for the question
-            question_vector = generate_embedding(question)
-            
-            # 2. Retrieve top 5 most relevant chunks from THIS tenant's data
-            # Using CosineDistance from pgvector
-            relevant_chunks = DocumentChunk.objects.filter(tenant=tenant).order_by(
-                CosineDistance('embedding', question_vector)
-            )[:5]
-            
-            # 3. Combine chunks into context
-            context = "\n---\n".join([c.content for c in relevant_chunks])
-            
-            # 4. Get AI response
-            start_time = time.time()
-            answer = get_ai_response(question, context)
-            response_time_ms = int((time.time() - start_time) * 1000)
-            
-            ChatQuery.objects.create(
-                tenant=tenant,
-                question=question,
-                answer=answer,
-                response_time_ms=response_time_ms,
-                is_successful=not answer.startswith("Error")
-            )
-            
-            return Response({"answer": answer}, status=status.HTTP_200_OK)
-            
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-class PublicChatView(views.APIView):
-    """
-    Publicly accessible endpoint for embedded widgets.
-    Identifies the tenant via public_api_key instead of auth tokens.
-    """
-    permission_classes = [permissions.AllowAny]
-
-    def post(self, request):
-        api_key = request.data.get('public_api_key')
-        question = request.data.get('question')
+        question = serializer.validated_data['question']
+        tenant = getattr(request, 'tenant', None) or request.user.tenant
+        marketing_agent = MarketingAgent.objects.filter(tenant=tenant, is_active=True).first()
         
-        if not api_key:
-            return Response({"error": "Missing public_api_key"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            tenant = Tenant.objects.get(public_api_key=api_key)
-        except (Tenant.DoesNotExist, ValueError):
-            return Response({"error": "Invalid public_api_key"}, status=status.HTTP_403_FORBIDDEN)
+        intent = OracleOrchestrator.classify_intent(marketing_agent, question)
+        if intent == "SALES" and marketing_agent:
+            return self.handle_sales(request, marketing_agent, question)
+        return self.handle_support(request, tenant, question)
 
-        if not question:
-            return Response({"error": "Missing question"}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Vector Search logic (same as internal chat but using the found tenant)
+    def handle_support(self, request, tenant, question):
         question_vector = generate_embedding(question)
         relevant_chunks = DocumentChunk.objects.filter(tenant=tenant).order_by(
             CosineDistance('embedding', question_vector)
         )[:5]
-        
         context = "\n---\n".join([c.content for c in relevant_chunks])
-        
         start_time = time.time()
         answer = get_ai_response(question, context)
         response_time_ms = int((time.time() - start_time) * 1000)
-        
-        ChatQuery.objects.create(
-            tenant=tenant,
-            question=question,
-            answer=answer,
-            response_time_ms=response_time_ms,
-            is_successful=not answer.startswith("Error")
-        )
-        
-        return Response({"answer": answer}, status=status.HTTP_200_OK)
+        ChatQuery.objects.create(tenant=tenant, question=question, answer=answer, response_time_ms=response_time_ms, is_successful=not answer.startswith("Error"))
+        return Response({"answer": answer, "mode": "support"}, status=status.HTTP_200_OK)
+
+    def handle_sales(self, request, agent, question):
+        session_id = request.data.get('session_id') or uuid.uuid4()
+        conv, _ = MarketingConversation.objects.get_or_create(session_id=session_id, marketing_agent=agent)
+        history = [{'role': m['role'], 'content': m['content']} for m in conv.messages[-6:]]
+        client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=agent.api_key)
+        try:
+            full_messages = [{"role": "system", "content": f"Sales bot for {agent.company_name}. Offer: {agent.current_offer}. Context: {agent.company_context}"}] + history + [{"role": "user", "content": question}]
+            response = client.chat.completions.create(model=agent.model_name, messages=full_messages)
+            reply = response.choices[0].message.content
+            conv.messages.extend([{"role": "user", "content": question}, {"role": "assistant", "content": reply}])
+            conv.save()
+            return Response({"answer": reply, "mode": "sales", "session_id": str(session_id)}, status=status.HTTP_200_OK)
+        except:
+            return self.handle_support(request, agent.tenant, question)
+
+class PublicChatView(ChatAgentView):
+    permission_classes = [permissions.AllowAny]
+    def post(self, request):
+        api_key = request.data.get('public_api_key')
+        question = request.data.get('question')
+        if not api_key: return Response({"error": "Missing key"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            tenant = Tenant.objects.get(public_api_key=api_key)
+            return super().post(request)
+        except:
+            return Response({"error": "Invalid tenant"}, status=status.HTTP_403_FORBIDDEN)
 
 class WebsiteViewSet(TenantQuerySetMixin, viewsets.ModelViewSet):
-    """
-    Handles listing and scraping website URLs.
-    """
     queryset = WebsiteSource.objects.all()
     serializer_class = WebsiteSourceSerializer
     permission_classes = [IsTenantDataOwner]
 
     def perform_create(self, serializer):
         url = serializer.validated_data['url']
-        # Use active tenant from switcher (request.tenant), not the DB user's fixed tenant
         active_tenant = getattr(self.request, 'tenant', None) or self.request.user.tenant
-        
-        # Save the source record under the correct agent
         website_source = serializer.save(tenant=active_tenant)
-        
-        # Scrape content
         text = scrape_website_text(url)
         if text:
             chunks = chunk_text(text)
             for content in chunks:
                 vector = generate_embedding(content)
-                DocumentChunk.objects.create(
-                    website=website_source,
-                    tenant=active_tenant,
-                    content=content,
-                    embedding=vector
-                )
+                DocumentChunk.objects.create(website=website_source, tenant=active_tenant, content=content, embedding=vector)
             website_source.is_processed = True
             website_source.save()
         else:
             website_source.delete()
-            raise views.serializers.ValidationError({"url": "Could not extract text from this website. Please try another URL."})
-
-    def destroy(self, request, *args, **kwargs):
-        # Chunks are deleted automatically due to on_delete=models.CASCADE
-        return super().destroy(request, *args, **kwargs)
+            raise views.serializers.ValidationError({"url": "Scrape failed."})
 
 class TenantViewSet(viewsets.ModelViewSet):
-    """
-    List all agents or create a new one.
-    Creation is staff-only; listing is open for the Agent Switcher.
-    """
     queryset = Tenant.objects.all().order_by('created_at')
     serializer_class = TenantSerializer
     permission_classes = [permissions.AllowAny]
 
-    def get_permissions(self):
-        if self.action == 'create':
-            return [permissions.IsAdminUser()]
-        return [permissions.AllowAny()]
-
     def perform_create(self, serializer):
         import re
         name = serializer.validated_data.get('name', '')
-        # Auto-generate a unique subdomain from the name
         base_slug = re.sub(r'[^a-z0-9]', '-', name.lower()).strip('-')
-        slug = base_slug
-        counter = 1
-        while Tenant.objects.filter(subdomain=slug).exists():
-            slug = f"{base_slug}-{counter}"
-            counter += 1
-        serializer.save(subdomain=slug)
+        serializer.save(subdomain=base_slug)
 
 class AnalyticsView(views.APIView):
-    """
-    Endpoint for fetching real-time dashboard analytics.
-    """
     permission_classes = [IsTenantDataOwner]
-
     def get(self, request):
         tenant = getattr(request, 'tenant', None) or request.user.tenant
         queries = ChatQuery.objects.filter(tenant=tenant)
-        
         total_queries = queries.count()
         avg_response = queries.aggregate(Avg('response_time_ms'))['response_time_ms__avg'] or 0
         success_count = queries.filter(is_successful=True).count()
-        success_rate = (success_count / total_queries * 100) if total_queries > 0 else 100
-        
-        # Last 7 days chart data
-        weekly_data = []
-        today = timezone.now().date()
-        for i in range(6, -1, -1):
-            day = today - timedelta(days=i)
-            day_queries = queries.filter(created_at__date=day).count()
-            weekly_data.append({
-                "day": day.strftime("%a"),
-                "queries": day_queries
-            })
-            
-        return Response({
-            "total_queries": total_queries,
-            "avg_response_time": round(avg_response / 1000, 2), # seconds
-            "success_rate": round(success_rate, 1),
-            "weekly_data": weekly_data
-        }, status=status.HTTP_200_OK)
+        return Response({"total_queries": total_queries, "avg_response_time": round(avg_response/1000, 2), "success_rate": round(success_count/total_queries*100, 1) if total_queries > 0 else 100}, status=status.HTTP_200_OK)
