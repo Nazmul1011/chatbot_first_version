@@ -84,9 +84,17 @@ class ChatAgentView(views.APIView):
         tenant = getattr(request, 'tenant', None) or request.user.tenant
         marketing_agent = MarketingAgent.objects.filter(tenant=tenant, is_active=True).first()
         
+        print(f"\n--- [ORCHESTRATOR] New Request from {tenant.name} ---")
+        print(f"--- [ORCHESTRATOR] Question: '{question[:50]}...' ---")
+
         intent = OracleOrchestrator.classify_intent(marketing_agent, question)
+        print(f"--- [ORCHESTRATOR] Detected Intent: {intent} ---")
+        
         if intent == "SALES" and marketing_agent:
+            print(f"--- [ORCHESTRATOR] Routing to Sales Brain: {marketing_agent.name} ---")
             return self.handle_sales(request, marketing_agent, question)
+        
+        print(f"--- [ORCHESTRATOR] Routing to Support Brain (RAG Knowledge Base) ---")
         return self.handle_support(request, tenant, question)
 
     def handle_support(self, request, tenant, question):
