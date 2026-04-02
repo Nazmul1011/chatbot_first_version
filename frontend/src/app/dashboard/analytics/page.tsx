@@ -52,12 +52,12 @@ export default function AnalyticsPage() {
   if (loading) {
     return (
       <div className="p-8 flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 shadow-xl shadow-blue-600/20"></div>
       </div>
     );
   }
 
-  const maxQueries = Math.max(...displayData.weekly_data.map((d) => d.queries), 1);
+  const maxQueries = Math.max(...displayData.weekly_data.map((d: any) => d.queries), 1);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700">

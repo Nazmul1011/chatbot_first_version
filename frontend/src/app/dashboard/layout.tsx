@@ -10,6 +10,7 @@ import {
   LogOut,
   Bot,
   TrendingUp,
+  Users,
 } from "lucide-react";
 import { clsx } from "clsx";
 import ChatWidget from "@/components/ChatWidget";
@@ -19,8 +20,8 @@ const navItems = [
   { icon: LayoutDashboard, label: "Overview", href: "/dashboard" },
   { icon: FileText, label: "Documents", href: "/dashboard/documents" },
   { icon: BarChart3, label: "Analytics", href: "/dashboard/analytics" },
-  { icon: MessageSquare, label: "Test Agent", href: "/dashboard/test-agent" },
   { icon: TrendingUp, label: "Marketing Agents", href: "/dashboard/marketing-agents" },
+  { icon: Users, label: "Leads Hub", href: "/dashboard/leads" },
   { icon: Settings, label: "Settings", href: "/dashboard/settings" },
 ];
 

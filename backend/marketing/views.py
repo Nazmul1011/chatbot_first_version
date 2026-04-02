@@ -90,7 +90,7 @@ Current offer: {agent.current_offer}"""
         return Response({"reply": reply, "session_id": str(session_id), "lead_captured": lead_captured})
 
 class MarketingLeadView(views.APIView):
-    permission_classes = [IsTenantDataOwner]
+    permission_classes = [permissions.IsAuthenticated, IsTenantDataOwner]
     def get(self, request, agent_id):
         active_tenant = getattr(request, 'tenant', None) or request.user.tenant
         try:
