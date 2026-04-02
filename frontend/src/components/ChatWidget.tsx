@@ -19,6 +19,7 @@ export default function ChatWidget() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [showPrivacy, setShowPrivacy] = useState(true);
   const [showEmoji, setShowEmoji] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const emojiRef = useRef<HTMLDivElement>(null);
 
@@ -124,11 +125,19 @@ export default function ChatWidget() {
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end outline-none select-none">
       {isOpen && (
-        <div className="bg-[#F9F9F9] shadow-[0_20px_50px_rgba(0,0,0,0.1)] rounded-[2.5rem] border border-white/50 flex flex-col mb-4 transition-all duration-500 w-[420px] h-[720px] overflow-hidden transform origin-bottom-right">
+        <div className={clsx(
+           "bg-[#F9F9F9] shadow-[0_20px_50px_rgba(0,0,0,0.1)] rounded-[2.5rem] border border-white/50 flex flex-col mb-4 transition-all duration-500 overflow-hidden transform origin-bottom-right",
+           isExpanded ? "w-[90vw] h-[90vh] max-w-[1200px]" : "w-[420px] h-[720px]"
+        )}>
           
           <div className="px-6 py-6 flex flex-col items-center relative">
              <div className="absolute top-4 left-6 flex gap-4">
-                <button className="p-2 bg-white/40 hover:bg-white rounded-full transition-all text-slate-500 shadow-sm border border-slate-100"><Maximize2 size={16} /></button>
+                <button 
+                  onClick={() => setIsExpanded(!isExpanded)} 
+                  className={clsx("p-2 rounded-full transition-all text-slate-500 shadow-sm border border-slate-100", isExpanded ? "bg-slate-100" : "bg-white/40 hover:bg-white")}
+                >
+                  <Maximize2 size={16} className={clsx(isExpanded && "rotate-180")} />
+                </button>
              </div>
              <div className="absolute top-4 right-6 flex gap-2">
                 <button className="p-2 bg-white/40 hover:bg-white rounded-full transition-all text-slate-500 shadow-sm border border-slate-100"><MoreHorizontal size={18} /></button>

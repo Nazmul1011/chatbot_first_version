@@ -52,9 +52,13 @@
       container.style.width = "450px";
       container.style.height = "750px";
       container.style.pointerEvents = "auto";
+    } else if (event.data.type === "CHAT_MAXIMIZE") {
+      container.style.width = "90vw";
+      container.style.height = "90vh";
+      container.style.maxWidth = "1200px";
     } else if (event.data.type === "CHAT_CLOSE") {
-      container.style.width = "120px"; // Shrink to bubble size
-      container.style.height = "120px";
+      container.style.width = "100px";
+      container.style.height = "100px";
     }
   });
 
